@@ -5,7 +5,7 @@ from PIL import Image
 def to_uint( bytes ): return int.from_bytes(bytes, sys.byteorder, signed=False)
 
 
-def open_file( path ):
+def open_cel( path ):
     return open(path, 'rb')
 
 
@@ -93,8 +93,9 @@ def decompress_frame(frame):
 
 
 def render_bitmap(buffer, width, name = "output.bmp"):
+	# Note: cels are stored bottom-up
+	
 	height = int(len(buffer)/width)
-	print(width, height)
 
 	bmp = Image.new("P", (width, height))
 
@@ -103,20 +104,45 @@ def render_bitmap(buffer, width, name = "output.bmp"):
 	for y in range(height):
 		for x in range(width):
 			pltt_i = buffer[y*width + x] * 3
-			bmp.putpixel((x, y), (palette[pltt_i], palette[pltt_i + 1], palette[pltt_i + 2]))
+			bmp.putpixel((x, height - y - 1), (palette[pltt_i], palette[pltt_i + 1], palette[pltt_i + 2]))
 
 	bmp.save(name)
 
 
-def load_bitmap():
-    return Image.load()
-    pass
+def get_file_extension(file_path):
+	return file_path[-3:]
 
 
-file_data = open_file("axe.cel")
-offsets   = get_cel_offsets_array(file_data)
-print(offsets)
-frame     = extract_frame(file_data, offsets, 0)
-buffer    = decompress_frame(frame)
-width     = compute_frame_width(frame)
-render_bitmap(buffer, width)
+def load_bitmap(path):
+    return Image.open(path)
+
+
+###################### START ######################
+
+if len(sys.argv) <= 1:
+	print("Too few arguments. Requires at least one file path.")
+	exit
+
+cels = []
+bmps = []
+for f_path in sys.argv[1:]:
+	extension = get_file_extension(f_path).lower()
+	if extension == "cel":
+		cels.append(f_path)
+	elif extension == "bmp":
+		bmps.append(f_path)
+	else:
+		print("Invalid file type: ", extension)
+		exit
+	
+print(cels, bmps)
+
+for cel_path in cels:
+	cel = open_cel(cel_path)
+	offsets = get_cel_offsets_array(cel)
+	for index in range(len(offsets) - 1):
+		frame = extract_frame(cel, offsets, index)
+		width = compute_frame_width(frame)
+		decompressed = decompress_frame(frame)
+		output_name  = cel_path.split('/')[-1] + ".frame" + str(index) + ".bmp"
+		render_bitmap(decompressed, width, output_name)
