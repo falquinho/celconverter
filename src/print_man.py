@@ -1,0 +1,5 @@
+print("How to use this script:")
+print("\tpython cel_converter.py 'mode' 'path-to-file'")
+print("Where 'mode'=['to-cel' | 'to-bmp']")
+print("\tIf 'mode' is 'to-cel' the input file must be a bmp, and vice-versa.")
+print("Ex.:\n\tpython cel_converter.py to-bmp ./panel8.cel")
