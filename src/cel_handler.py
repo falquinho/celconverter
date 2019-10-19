@@ -117,6 +117,82 @@ def load_bitmap(path):
     return Image.open(path)
 
 
+def compress_bmp_row_block(block):
+	compressed_row = []
+
+	max_len = 0x80 if block[0] == 0xff else 0x7f
+
+	while len(block) >= max_len:
+		if max_len == 128:
+			compressed_row.append(0x80)
+		else:
+			compressed_row.append(0x7f)
+			compressed_row.extend(block[:max_len])
+
+		block = block[max_len:]
+
+	if max_len == 128:
+		compressed_row.append(0x100 - len(block))
+	else:
+		compressed_row.append(len(block))
+		compressed_row.extend(block)
+
+	return compressed_row
+
+
+def compress_bmp_row(row):
+	compressed_row = []
+	while len(row):
+		slice_len = 1
+		for i in range(1, len(row)):
+			if row[slice_len] == 0xff and row[slice_len-1] != 0xff:
+				break
+			if row[slice_len] != 0xff and row[slice_len-1] == 0xff:
+				break
+			slice_len += 1
+
+		block = row[:slice_len]
+		row   = row[slice_len:]
+		compressed_row.extend(compress_bmp_row_block(block))
+		pass
+	return compressed_row
+
+
+def bmp_to_cel_frame(img):
+	frame = []
+	
+	# Remember: cels are stored bottom-up
+	for y in range(img.height - 1 , -1, -1):
+		cel_row  = []
+		for x in range(img.width):
+			cel_row.append( img.getpixel((x, y)) )
+		frame.extend( compress_bmp_row(cel_row) )
+
+	return bytes(frame)
+
+
+def bmp_frames_to_cel(frame_list):
+	cel = bytearray()
+	header_size = (len(frame_list) + 2) * 4 # in bytes. Times 4 bc its a uint32 for each  
+	cel.extend(bytes(header_size)) # allocate the header space
+
+	# Set the num of frames in the header(note: little endian):
+	for i in range(4):
+		cel[i] = (len(frame_list) >> 8*i) & 0xff
+
+	# For each frame set its pos in the header and append its bytes in the cel  
+	for index, frame in enumerate(frame_list):
+		for j in range(4):
+			cel[4*(index+1) + j] = (len(cel) >> 8*j) & 0xff
+		cel.extend(frame)
+	
+	# Finalize by setting the last header uint32 as the cel size
+	for i in range(4):
+		cel[4*(len(frame_list) + 1) + i] = (len(cel) >> 8*i) & 0xff
+
+	return cel
+
+
 ###################### START ######################
 
 if len(sys.argv) <= 1:
@@ -133,7 +209,6 @@ for f_path in sys.argv[1:]:
 		bmps.append(f_path)
 	else:
 		print("Invalid file type: ", extension)
-		exit
 	
 print(cels, bmps)
 
@@ -146,3 +221,18 @@ for cel_path in cels:
 		decompressed = decompress_frame(frame)
 		output_name  = cel_path.split('/')[-1] + ".frame" + str(index) + ".bmp"
 		render_bitmap(decompressed, width, output_name)
+
+if not len(bmps):
+	exit
+
+frames = []
+for bmp_path in bmps:
+	img = Image.open(bmp_path)
+	frames.append(bmp_to_cel_frame(img))
+	
+new_file = open("output.cel", "wb")
+
+cel = bmp_frames_to_cel(frames)
+
+new_file.write(cel)
+new_file.close()
